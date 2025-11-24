@@ -1,11 +1,18 @@
 // ====== STATE ======
-let codeReader = null;
+let codeReader = null;         // ZXing instance (fallback)
+let videoStream = null;        // MediaStream for native detector
+let rafId = null;              // requestAnimationFrame id
+
 let processingLock = false;
 let lastScannedValue = null;
 let lastScanTime = 0;
 
 let currentBatch = []; // {code, format, existedBefore}
 let pendingDuplicateCode = null;
+
+// Prefer native BarcodeDetector when available
+const hasNativeDetector = "BarcodeDetector" in window;
+let barcodeDetector = null;
 
 // ====== STORAGE HELPERS ======
 function getBatches() {
@@ -60,7 +67,7 @@ function flashOverlay(type) {
   const warning = document.getElementById("warningOverlay");
   const target = type === "success" ? success : warning;
   target.classList.add("show");
-  setTimeout(() => target.classList.remove("show"), 180);
+  setTimeout(() => target.classList.remove("show"), 150);
 }
 
 // ====== BATCH RENDER ======
@@ -139,13 +146,102 @@ function handleBarcodeScanned(code, format) {
   }
 }
 
-// ====== CAMERA ======
-async function startCamera() {
-  if (codeReader) return;
+// ====== NATIVE BARCODEDETECTOR PATH (fast) ======
+async function startNativeScanner() {
+  const video = document.getElementById("video");
 
+  try {
+    // prefer rear camera & decent resolution for better detection
+    videoStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      },
+      audio: false
+    });
+
+    video.srcObject = videoStream;
+    await video.play();
+
+    // Init detector with common formats (keeps it fast)
+    const formats = [
+      "code_128",
+      "code_39",
+      "code_93",
+      "ean_13",
+      "ean_8",
+      "upc_a",
+      "upc_e",
+      "itf",
+      "qr_code"
+    ].filter(f => BarcodeDetector.getSupportedFormats().includes(f));
+
+    barcodeDetector = new BarcodeDetector({ formats });
+
+    const scanLoop = async () => {
+      if (!barcodeDetector) return;
+
+      try {
+        const barcodes = await barcodeDetector.detect(video);
+        if (barcodes && barcodes.length > 0) {
+          const first = barcodes[0];
+          const value = first.rawValue;
+          const now = Date.now();
+
+          // shorter lock (350ms) = faster new scans but still avoids noise
+          if (
+            processingLock &&
+            value === lastScannedValue &&
+            now - lastScanTime < 350
+          ) {
+            // ignore same frame duplicate
+          } else {
+            processingLock = true;
+            lastScannedValue = value;
+            lastScanTime = now;
+
+            handleBarcodeScanned(value, first.format || "native");
+
+            setTimeout(() => { processingLock = false; }, 250);
+          }
+        }
+      } catch (e) {
+        console.error("BarcodeDetector error:", e);
+      }
+
+      rafId = requestAnimationFrame(scanLoop);
+    };
+
+    rafId = requestAnimationFrame(scanLoop);
+  } catch (e) {
+    console.error("Native scanner failed, falling back to ZXing:", e);
+    showToast("Native scanner not available, using fallback.", "warning");
+    // fallback to ZXing
+    startZXingScanner();
+  }
+}
+
+function stopNativeScanner() {
+  if (rafId) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  }
+  if (videoStream) {
+    videoStream.getTracks().forEach(t => t.stop());
+    videoStream = null;
+  }
+  const video = document.getElementById("video");
+  if (video) {
+    video.srcObject = null;
+  }
+  barcodeDetector = null;
+}
+
+// ====== ZXING PATH (fallback) ======
+async function startZXingScanner() {
+  if (codeReader) return;
   codeReader = new ZXing.BrowserMultiFormatReader();
-  document.getElementById("startCameraBtn").disabled = true;
-  document.getElementById("stopCameraBtn").disabled = false;
 
   try {
     await codeReader.decodeFromVideoDevice(null, "video", (result, err) => {
@@ -155,8 +251,10 @@ async function startCamera() {
         if (
           processingLock &&
           value === lastScannedValue &&
-          now - lastScanTime < 1500
-        ) return;
+          now - lastScanTime < 400
+        ) {
+          return;
+        }
 
         processingLock = true;
         lastScannedValue = value;
@@ -167,23 +265,44 @@ async function startCamera() {
           result.getBarcodeFormat && result.getBarcodeFormat()
         );
 
-        setTimeout(() => { processingLock = false; }, 700);
+        setTimeout(() => { processingLock = false; }, 300);
       }
     });
   } catch (e) {
     console.error(e);
     showToast("Could not start camera. Check permissions.", "error");
-    document.getElementById("startCameraBtn").disabled = false;
-    document.getElementById("stopCameraBtn").disabled = true;
-    if (codeReader) { codeReader.reset(); codeReader = null; }
+    if (codeReader) {
+      codeReader.reset();
+      codeReader = null;
+    }
   }
 }
 
-function stopCamera() {
+function stopZXingScanner() {
   if (codeReader) {
     codeReader.reset();
     codeReader = null;
   }
+}
+
+// ====== PUBLIC CAMERA FUNCTIONS (used by buttons) ======
+async function startCamera() {
+  document.getElementById("startCameraBtn").disabled = true;
+  document.getElementById("stopCameraBtn").disabled = false;
+
+  if (hasNativeDetector && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    await startNativeScanner();
+  } else {
+    await startZXingScanner();
+  }
+}
+
+function stopCamera() {
+  if (hasNativeDetector) {
+    stopNativeScanner();
+  }
+  stopZXingScanner();
+
   document.getElementById("startCameraBtn").disabled = false;
   document.getElementById("stopCameraBtn").disabled = true;
 }
