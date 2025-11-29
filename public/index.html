@@ -1,93 +1,106 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <title>Maizic – Barcode Scanner</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+
   <link rel="stylesheet" href="/styles.css" />
+
+  <!-- ZXing library for camera-based barcode scanning -->
   <script src="https://unpkg.com/@zxing/library@latest"></script>
 </head>
-
 <body>
 <div class="app">
+  <h1>Maizic – Camera Barcode Scanner</h1>
+  <p class="subtitle">
+    Scan labels using your camera, build a batch, detect duplicates, and assign to a delivery partner.
+    Data is stored locally in your browser (localStorage).
+  </p>
 
-  <h1>Maizic – Ultra Fast Barcode Scanner</h1>
-  <p class="subtitle">Scan 1D barcodes using camera, detect duplicates (local + server), store batches locally.</p>
-
-  <!-- ACTION BUTTONS -->
+  <!-- Controls -->
   <div class="row controls-row">
     <div class="col">
-      <button class="btn btn-primary" id="startCameraBtn">▶ Start Camera</button>
-      <button class="btn btn-danger" id="stopCameraBtn" disabled>■ Stop</button>
-      <button class="btn btn-ghost" id="finishBatchBtn" disabled>✓ Finish Batch</button>
-      <button class="btn btn-warning" id="clearStorageBtn">🧹 Clear Local Storage</button>
+      <label for="scannerName">Scanner Name (required)</label>
+      <input id="scannerName" type="text" placeholder="e.g. Akash / Scanner 1" />
       <span class="badge" id="batchInfoBadge">Saved batches: 0</span>
+    </div>
+
+    <div class="col col-actions">
+      <div>
+        <button class="btn btn-primary" id="startCameraBtn">▶ Start Camera</button>
+        <button class="btn btn-danger" id="stopCameraBtn" disabled>■ Stop</button>
+        <button class="btn btn-ghost" id="finishBatchBtn" disabled>
+          ✓ Finish &amp; Assign Delivery
+        </button>
+      </div>
     </div>
   </div>
 
-  <!-- VIDEO PREVIEW -->
+  <!-- Video + overlay -->
   <div class="video-wrapper">
     <video id="video" muted playsinline></video>
     <div id="successOverlay" class="overlay-flash overlay-success">✔</div>
     <div id="warningOverlay" class="overlay-flash overlay-warning">!</div>
   </div>
 
-  <!-- CURRENT BATCH -->
+  <!-- Current batch -->
   <div class="batch-section">
     <h2>Current Batch (<span id="batchCount">0</span>)</h2>
-
     <table>
       <thead>
-        <tr>
-          <th>#</th>
-          <th>Barcode</th>
-          <th>Format</th>
-          <th>Duplicate?</th>
-        </tr>
+      <tr>
+        <th>#</th>
+        <th>Barcode</th>
+        <th>Format</th>
+        <th>Previous Batch?</th>
+      </tr>
       </thead>
-
       <tbody id="batchTableBody">
-        <tr><td colspan="4" class="empty-row">No barcodes scanned yet.</td></tr>
+      <tr><td colspan="4" class="empty-row">No barcodes scanned yet.</td></tr>
       </tbody>
     </table>
   </div>
-
 </div>
 
-<!-- DUPLICATE MODAL -->
+<!-- Duplicate cross-batch modal -->
 <div id="duplicateModalBackdrop" class="modal-backdrop">
   <div class="modal">
-    <h3>Duplicate Detected</h3>
+    <h3>Duplicate Found in Previous Batch</h3>
     <p id="duplicateModalText"></p>
     <div class="modal-actions">
-      <button class="btn btn-ghost" id="duplicateCancelBtn">Remove</button>
-      <button class="btn btn-primary" id="duplicateAddBtn">Keep</button>
+      <button class="btn btn-ghost" id="duplicateCancelBtn">Cancel (Remove)</button>
+      <button class="btn btn-primary" id="duplicateAddBtn">Add Anyway</button>
     </div>
   </div>
 </div>
 
-<!-- FINISH MODAL -->
+<!-- Finish batch modal -->
 <div id="finishModalBackdrop" class="modal-backdrop">
   <div class="modal">
-    <h3>Finish Batch</h3>
-    <p>Select delivery partner:</p>
+    <h3>Assign Delivery Partner</h3>
+    <p>Select the delivery partner for this batch.</p>
+    <label for="partnerSelect">Delivery Partner</label>
     <select id="partnerSelect">
       <option value="">-- Select --</option>
       <option value="Flipkart">Flipkart</option>
       <option value="Amazon">Amazon</option>
-      <option value="BlueDart">BlueDart</option>
       <option value="DTDC">DTDC</option>
+      <option value="BlueDart">BlueDart</option>
+      <option value="Other">Other</option>
     </select>
-
     <div class="modal-actions">
       <button class="btn btn-ghost" id="finishCancelBtn">Cancel</button>
-      <button class="btn btn-primary" id="finishConfirmBtn">Save</button>
+      <button class="btn btn-primary" id="finishConfirmBtn">Save Batch</button>
     </div>
   </div>
 </div>
 
-<!-- TOAST -->
-<div id="toast" class="toast"><span id="toastText"></span></div>
+<!-- Toast -->
+<div id="toast" class="toast">
+  <span id="toastText"></span>
+</div>
 
 <script src="/main.js"></script>
 </body>
